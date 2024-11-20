@@ -60,7 +60,7 @@ func Accept(lis net.Listener) {
 func (server *Server) ServerConn(conn io.ReadWriteCloser) {
 	defer func() { _ = conn.Close() }()
 	var opt Option
-	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
+	if err := json.NewDecoder(conn).Decode(&opt); err != nil { // server 获取client协商使用的option
 		log.Println("rpc server: options error: ", err)
 		return
 	}
