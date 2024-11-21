@@ -156,7 +156,7 @@ func newClientCodec(cc codec.Codec, opt *Option) *Client {
 		closing:  false,
 		shutdown: false,
 	}
-	go client.receive()
+	go client.receive() // 一旦连接建立，马上开始监听服务端是不是有响应
 	return client
 }
 
