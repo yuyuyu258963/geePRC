@@ -43,6 +43,7 @@ type Args struct{ Num1, Num2 int }
 
 func (f Foo) Sum(args Args, reply *int) error {
 	*reply = args.Num1 + args.Num2
+	time.Sleep(time.Second * 3)
 	return nil
 }
 
@@ -78,7 +79,7 @@ func main() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			if err := client.Call(ctx, "Foo.Sum", args, &reply); err != nil {
-				log.Fatal("call Foo Sum error:", err)
+				log.Println("call Foo Sum error:", err)
 			}
 			log.Printf("%d + %d = %d\n", args.Num1, args.Num2, reply)
 		}(i)

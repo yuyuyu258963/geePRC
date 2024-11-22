@@ -3,6 +3,7 @@ package geerpc
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"geeRPC/codec"
 	"io"
 	"log"
@@ -10,19 +11,23 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 const MagicNumber = 0x3bef5c
 
 type Option struct {
-	MagicNumber int        // Magic number mask this is a geeRpc request
-	CodecType   codec.Type // client may choose different Codec to encode body
+	MagicNumber       int           // Magic number mask this is a geeRpc request
+	CodecType         codec.Type    // client may choose different Codec to encode body
+	ConnectionTimeout time.Duration //client may choose different ConnectionTimeout
+	HandleTimeOut     time.Duration
 }
 
 // 默认的选项
 var DefaultOption = &Option{
-	MagicNumber: MagicNumber,
-	CodecType:   codec.GobType,
+	MagicNumber:       MagicNumber,
+	CodecType:         codec.GobType,
+	ConnectionTimeout: time.Second * 5,
 }
 
 // Server represents an RPC Server
@@ -113,7 +118,8 @@ func (server *Server) ServerConn(conn io.ReadWriteCloser) {
 		log.Printf("rpc server: invalid codec type %s\n", opt.CodecType)
 		return
 	}
-	server.serveCodec(f(conn))
+	log.Printf("opt.HandleTimeOut %d\n", opt.HandleTimeOut)
+	server.serveCodec(f(conn), opt.HandleTimeOut)
 }
 
 // ============ 连接建立后相应通过连接传过来的请求
@@ -121,7 +127,7 @@ func (server *Server) ServerConn(conn io.ReadWriteCloser) {
 // invalidRequest is a placeholder for response argv when error occurs
 var invalidRequest = struct{}{}
 
-func (server *Server) serveCodec(cc codec.Codec) {
+func (server *Server) serveCodec(cc codec.Codec, timeout time.Duration) {
 	sending := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	for {
@@ -136,7 +142,7 @@ func (server *Server) serveCodec(cc codec.Codec) {
 		}
 		// 请求没啥问题，相应请求
 		wg.Add(1)
-		go server.handleRequest(cc, req, sending, wg)
+		go server.handleRequest(cc, req, sending, wg, timeout)
 	}
 	wg.Wait()
 	_ = cc.Close()
@@ -201,14 +207,36 @@ func (server *Server) sendResponse(cc codec.Codec, h *codec.Header, body interfa
 }
 
 // 请求处理
-func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup) {
+// 考虑两个超时，一个是处理超时，一个是发送response超时
+func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup, timeout time.Duration) {
 	defer wg.Done()
+	// 分为两个阶段是为了避免重复请求的发送
+	called := make(chan struct{})
+	send := make(chan struct{})
 	// log.Println(req.h, req.argv.Elem())
-	// call the rpc method
-	err := req.svc.call(req.mtype, req.argv, req.replyv)
-	if err != nil {
-		req.h.Error = err.Error()
-		server.sendResponse(cc, req.h, invalidRequest, sending)
+	go func() {
+		// call the rpc method
+		err := req.svc.call(req.mtype, req.argv, req.replyv)
+		called <- struct{}{}
+		if err != nil {
+			req.h.Error = err.Error()
+			server.sendResponse(cc, req.h, invalidRequest, sending)
+			send <- struct{}{}
+			return
+		}
+		server.sendResponse(cc, req.h, req.replyv.Interface(), sending)
+		send <- struct{}{}
+	}()
+	if timeout == 0 {
+		<-called
+		<-send
+		return
 	}
-	server.sendResponse(cc, req.h, req.replyv.Interface(), sending)
+	select {
+	case <-time.After(timeout):
+		req.h.Error = fmt.Sprintf("rpc server : request handle timeout %s", timeout)
+		server.sendResponse(cc, req.h, invalidRequest, sending)
+	case <-called:
+		<-send
+	}
 }
