@@ -65,3 +65,13 @@ func TestClientCall(t *testing.T) {
 		_assert(err != nil && strings.Contains(err.Error(), "handle timeout"), "expect a timeout error")
 	})
 }
+
+func TestXDial(t *testing.T) {
+	// if runtime.GOS == "linux" {
+	// 	ch := make(chan struct{})
+	// 	addr := "/tmp/geerpc.sock"
+	// 	go func() {
+	// 		_ = os.Remove()
+	// 	}()
+	// }
+}

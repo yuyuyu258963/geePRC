@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -239,4 +240,45 @@ func (server *Server) handleRequest(cc codec.Codec, req *request, sending *sync.
 	case <-called:
 		<-send
 	}
+}
+
+// =========== 实现支持 HTTP的功能
+const (
+	connected        = "200 Connected to Gee RPC"
+	defaultRPCPath   = "/_geerpc_"
+	defaultDebugPath = "/debug/geerpc"
+)
+
+// ServeHTTP implements an http.Handler that answers RPC request
+// 这部分的逻辑跟前面的有所不同，因为这里是需要接受http请求，通过http的连接后就转到rpc的处理逻辑
+func (server *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// 拒绝非CONNECT的请求
+	if req.Method != "CONNECT" {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, "405 must CONNECT\n")
+	}
+	// 自动挟持链接，并使用原始的TCP链接与客户端进行通信
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		log.Print("rpc hijacking", req.RemoteAddr, ": ", err.Error())
+		return
+	}
+	_, _ = io.WriteString(conn, "HTTP/1.0 "+connected+"\n\n")
+	// 之后就将连接的所有权交给rpc服务
+	server.ServerConn(conn)
+}
+
+// HandleHTTP registers an HTTP request handler for RPC messages on rpcPath
+func (server *Server) HandleHTTP() {
+	http.Handle(defaultRPCPath, server)
+	// 使用同一个server实例，这样就是请求defaultDebugPath的时候可以通过debugHTTP包裹后的ServeHTTP方法来响应显示未
+	// Server上注册过的Services的信息
+	http.Handle(defaultDebugPath, debugHTTP{server})
+	log.Println("rpc server debug path:", defaultDebugPath)
+}
+
+// HandleHTTP registers an HTTP request handler for RPC messages on rpcPath
+func HandleHTTP() {
+	DefaultServer.HandleHTTP()
 }

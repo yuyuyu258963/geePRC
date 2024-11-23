@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	geerpc "geeRPC"
 	"log"
@@ -37,7 +38,7 @@ func main() {
 			args := fmt.Sprintf("data 1 %d", i)
 			var reply string
 			// 阻塞等待执行结束
-			if err := client.Call("Foo.Sum", args, &reply); err != nil {
+			if err := client.Call(context.Background(), "Foo.Sum", args, &reply); err != nil {
 				log.Fatal("call Foo.Sum error:", err)
 			}
 			log.Println("reply: ", reply)

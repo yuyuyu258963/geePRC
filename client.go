@@ -1,6 +1,7 @@
 package geerpc
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -151,6 +154,27 @@ func NewClient(conn net.Conn, opt *Option) (*Client, error) {
 	return newClientCodec(f(conn), opt), nil
 }
 
+// NewHTTPClient new a Client instance via HTTP as transport protocol
+func NewHTTPClient(conn net.Conn, opt *Option) (*Client, error) {
+	// 就是以HTTP报文的格式来写,其实就是基于TCP后面自己用HTTP的格式来发一次请求
+	// 然后server相同的用HTTP的格式来响应请求
+	_, _ = io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", defaultRPCPath))
+
+	// Require successful HTTP response
+	// before switching to RPC protocol
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
+	if err == nil && resp.Status == connected {
+		// 成功收到请求后托管给RPCClient去处理
+		// 然后就是协商Option，创建Client实例了
+		return NewClient(conn, opt)
+	}
+	if err != nil {
+		err = errors.New("unexpected HTTP response: " + resp.Status)
+	}
+	// 返回错误
+	return nil, err
+}
+
 // 初始化一个服务端
 func newClientCodec(cc codec.Codec, opt *Option) *Client {
 	client := &Client{
@@ -185,7 +209,13 @@ func Dial(network, addr string, opts ...*Option) (client *Client, err error) {
 	return dialWithTimeOut(NewClient, network, addr, opts...)
 }
 
-// 有建立连接时的超时
+// DialHTTP connects to an HTTP RPC server at the specified network address
+// listening on the default HTTP RPC path
+func DialHTTP(network, addr string, opts ...*Option) (client *Client, err error) {
+	return dialWithTimeOut(NewHTTPClient, network, addr, opts...)
+}
+
+// 有建立连接时的超时,建立TCP连接
 func dialWithTimeOut(f newClientFunc, network, addr string, opts ...*Option) (client *Client, err error) {
 	opt, err := parseOptions(opts...)
 	if err != nil {
@@ -217,6 +247,20 @@ func dialWithTimeOut(f newClientFunc, network, addr string, opts ...*Option) (cl
 	case <-ch:
 	}
 	return
+}
+
+func XDial(rpcAddr string, opts ...*Option) (*Client, error) {
+	parts := strings.Split(rpcAddr, "@")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("rpc client error: %s", rpcAddr)
+	}
+	protocol, addr := parts[0], parts[1]
+	switch protocol {
+	case "http":
+		return DialHTTP("tcp", addr, opts...)
+	default:
+		return Dial(protocol, addr, opts...)
+	}
 }
 
 // 将一次调用RPC请求的信息封装的Call
