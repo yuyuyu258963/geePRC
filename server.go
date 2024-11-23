@@ -252,6 +252,8 @@ const (
 // ServeHTTP implements an http.Handler that answers RPC request
 // 这部分的逻辑跟前面的有所不同，因为这里是需要接受http请求，通过http的连接后就转到rpc的处理逻辑
 func (server *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// 由于前面套到了HTTP的处理流程中，所以类似的Accept的过程都被代理了啊
+	// 而且传入的数据也会自动被解析，所以如果要直接复用这个tcp连接那是不行的，需要先Hijack获得connection的控制权
 	// 拒绝非CONNECT的请求
 	if req.Method != "CONNECT" {
 		w.Header().Set("Content-Type", "text/plain")
@@ -259,6 +261,8 @@ func (server *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		_, _ = io.WriteString(w, "405 must CONNECT\n")
 	}
 	// 自动挟持链接，并使用原始的TCP链接与客户端进行通信
+	// 本质上来说就是底层逻辑上的tcp连接传输的信息不会再被自动读取解析了，而是我们可以后续自定义的写入数据
+	// 然后自己来读取协商的Option和{header,body}格式传输的rpc信息
 	conn, _, err := w.(http.Hijacker).Hijack()
 	if err != nil {
 		log.Print("rpc hijacking", req.RemoteAddr, ": ", err.Error())
