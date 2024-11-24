@@ -57,7 +57,7 @@ func (s *service) registerMethods() {
 			ReplyType: replyType,
 			numCalls:  0,
 		}
-		log.Printf("rpc server register: %s.%s", s.name, method.Name)
+		// log.Printf("rpc server register: %s.%s", s.name, method.Name)
 	}
 }
 

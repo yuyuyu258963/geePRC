@@ -28,7 +28,7 @@ type Option struct {
 var DefaultOption = &Option{
 	MagicNumber:       MagicNumber,
 	CodecType:         codec.GobType,
-	ConnectionTimeout: time.Second * 5,
+	ConnectionTimeout: time.Second * 10,
 }
 
 // Server represents an RPC Server
@@ -87,7 +87,7 @@ func (s *Server) Accept(lis net.Listener) {
 			log.Println("rpc server: accept error: ", err)
 			return
 		}
-		log.Println(conn.LocalAddr(), conn.RemoteAddr())
+		// log.Println(conn.LocalAddr(), conn.RemoteAddr())
 		// 处理connection
 		go s.ServerConn(conn)
 	}
@@ -119,7 +119,7 @@ func (server *Server) ServerConn(conn io.ReadWriteCloser) {
 		log.Printf("rpc server: invalid codec type %s\n", opt.CodecType)
 		return
 	}
-	log.Printf("opt.HandleTimeOut %d\n", opt.HandleTimeOut)
+	// log.Printf("opt.HandleTimeout %d\n", opt.HandleTimeOut)
 	server.serveCodec(f(conn), opt.HandleTimeOut)
 }
 
@@ -195,6 +195,7 @@ func (server *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
 		}
 		return nil, err
 	}
+	// log.Printf("read head:%v\n", h)
 	return &h, nil
 }
 

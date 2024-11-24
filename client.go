@@ -178,11 +178,10 @@ func NewHTTPClient(conn net.Conn, opt *Option) (*Client, error) {
 // 初始化一个服务端
 func newClientCodec(cc codec.Codec, opt *Option) *Client {
 	client := &Client{
-		cc:       cc,
-		opt:      opt,
-		pending:  make(map[uint64]*Call),
-		closing:  false,
-		shutdown: false,
+		seq:     1,
+		cc:      cc,
+		opt:     opt,
+		pending: make(map[uint64]*Call),
 	}
 	go client.receive() // 一旦连接建立，马上开始监听服务端是不是有响应
 	return client
@@ -227,7 +226,7 @@ func dialWithTimeOut(f newClientFunc, network, addr string, opts ...*Option) (cl
 	}
 	// close the connection if client is nil
 	defer func() {
-		if err != nil && conn != nil { // 如果是后面出现了超时则需要关闭connection否则就是没连接成功
+		if err != nil { // 如果是后面出现了超时则需要关闭connection否则就是没连接成功
 			conn.Close()
 		}
 	}()
@@ -269,7 +268,7 @@ func (client *Client) send(call *Call) {
 	// make sure that the client will send a complete request
 	client.sending.Lock()
 	defer client.sending.Unlock()
-
+	// log.Printf("send %v", call.Args)
 	// register this call
 	seq, err := client.registerCall(call)
 	if err != nil {
@@ -283,6 +282,7 @@ func (client *Client) send(call *Call) {
 	client.header.Seq = seq
 	client.header.Error = ""
 
+	// log.Println(client.header)
 	// encode and send the request
 	if err := client.cc.Write(&client.header, call.Args); err != nil {
 		call := client.removeCall(seq)
